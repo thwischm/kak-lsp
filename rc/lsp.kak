@@ -1116,17 +1116,22 @@ done
 
 ### Other commands ###
 
-define-command lsp-find-error -params 0..2 -docstring "lsp-find-error [--previous] [--include-warnings]
+define-command lsp-find-error -params 0..3 -docstring "lsp-find-error [--previous] [--include-warnings] [--select]
 Jump to the next or previous diagnostic error" %{
     evaluate-commands %sh{
         previous=false
         errorCompare="DiagnosticError"
+        _select=false
         if [ "$1" = "--previous" ]; then
             previous=true
             shift
         fi
         if [ "$1" = "--include-warnings" ]; then
             errorCompare="Diagnostic"
+            shift
+        fi
+        if [ "$1" = "--select" ]; then
+            _select=true
         fi
         #expand quoting, stores option in $@
         eval set -- "${kak_quoted_opt_lsp_errors}"
@@ -1137,13 +1142,14 @@ Jump to the next or previous diagnostic error" %{
         selection=""
         for e in "$@"; do
             if [ -z "${e##*${errorCompare}*}" ]; then # e contains errorCompare
-                e=${e%,*}
-                line=${e%.*}
-                column=${e#*.}
+                e=${e%|*}
+                e_begin=${e%,*}
+                line=${e_begin%.*}
+                column=${e_begin#*.}
                 if [ $line -eq $kak_cursor_line ] && [ $column -eq $kak_cursor_column ]; then
                     continue #do not return the current location
                 fi
-                current="$line $column"
+                current="$e"
                 if [ -z "$first" ]; then
                     first="$current"
                 fi
@@ -1166,15 +1172,25 @@ Jump to the next or previous diagnostic error" %{
         if [ -z "$first" ]; then
             # if nothing found
             echo "echo -markup '{Error}No errors found'"
-        fi
-        if [ -z "$selection" ]; then #if nothing found past the cursor
+        else
+            if [ -z "$selection" ]; then #if nothing found past the cursor
+                if $previous; then
+                    selection="$current"
+                else
+                    selection="$first"
+                fi
+            fi
+            begin=${selection%,*}
+            line=${begin%.*}
+            column=${begin#*.}
+            printf 'edit "%b" %b %b\n' "$kak_buffile" "$line" "$column"
+            if $_select; then
+                printf 'select %b\n' "$selection"
+            fi
             if $previous; then
-                selection="$current"
-            else
-                selection="$first"
+                echo "execute-keys '<a-;>'"
             fi
         fi
-        printf 'edit "%b" %b' "$kak_buffile" "$selection"
     }
 }
 
